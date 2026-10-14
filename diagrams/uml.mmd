@@ -34,16 +34,22 @@ classDiagram
         +str reason
     }
 
+    class SkippedTask {
+        +Task task
+        +str reason
+    }
+
     class DailyPlan {
         +list~ScheduledTask~ entries
-        +list~Task~ skipped
+        +list~SkippedTask~ skipped
         +explain() str
     }
 
-    Owner "1" --> "1" Pet : owns
     Pet "1" --> "0..*" Task : has
     Scheduler ..> Owner : reads constraints
     Scheduler ..> Pet : reads tasks
     Scheduler ..> DailyPlan : creates
     DailyPlan "1" --> "0..*" ScheduledTask : contains
+    DailyPlan "1" --> "0..*" SkippedTask : left out
     ScheduledTask --> Task : schedules
+    SkippedTask --> Task : refers to

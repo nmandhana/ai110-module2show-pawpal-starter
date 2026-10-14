@@ -12,6 +12,11 @@ never the other way around.
 
 from dataclasses import dataclass, field
 
+# Priority names mapped to sort rank (lower = more important). Strings alone
+# sort alphabetically (high < low < medium), which is wrong — the scheduler
+# ranks tasks by looking up this mapping instead.
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
 
 @dataclass
 class Owner:
@@ -40,7 +45,13 @@ class Pet:
 
     def add_task(self, task: Task) -> None:
         """Add a care task. All task additions go through this single doorway
-        so future validation (e.g. rejecting zero-minute tasks) lives in one place."""
+        so validation lives in one place."""
+        if task.duration_minutes <= 0:
+            raise ValueError(f"Task duration must be positive, got {task.duration_minutes}")
+        if task.priority not in PRIORITY_ORDER:
+            raise ValueError(
+                f"Unknown priority {task.priority!r}; expected one of {list(PRIORITY_ORDER)}"
+            )
         self.tasks.append(task)
 
 
@@ -54,11 +65,19 @@ class ScheduledTask:
 
 
 @dataclass
+class SkippedTask:
+    """A task that didn't make the plan, and why (e.g. not enough time left)."""
+
+    task: Task
+    reason: str
+
+
+@dataclass
 class DailyPlan:
     """The result of scheduling: ordered entries plus the tasks that didn't fit."""
 
     entries: list[ScheduledTask] = field(default_factory=list)
-    skipped: list[Task] = field(default_factory=list)
+    skipped: list[SkippedTask] = field(default_factory=list)
 
     def explain(self) -> str:
         """Return a human-readable explanation of the plan, built from the
