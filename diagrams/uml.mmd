@@ -1,12 +1,15 @@
 classDiagram
-    %% PawPal+ initial design (draft)
-    %% Data classes: Owner, Pet, Task
-    %% Logic: Scheduler (stateless)
-    %% Result: DailyPlan made of ScheduledTask entries
+    %% PawPal+ design
+    %% Data classes: Task, Pet, Owner (Owner manages multiple pets)
+    %% Logic: Scheduler (stateless, reads tasks via Owner.get_all_tasks)
+    %% Result: DailyPlan made of ScheduledTask entries + SkippedTask leftovers
 
     class Owner {
         +str name
         +int available_minutes
+        +list~Pet~ pets
+        +add_pet(pet) None
+        +get_all_tasks() list~Task~
     }
 
     class Pet {
@@ -20,10 +23,13 @@ classDiagram
         +str title
         +int duration_minutes
         +str priority
+        +str frequency
+        +bool completed
+        +str pet_name
     }
 
     class Scheduler {
-        +build_plan(owner, pet) DailyPlan
+        +build_plan(owner) DailyPlan
         -rank_tasks(tasks) list~Task~
         -fits_in_budget(task, minutes_left) bool
     }
@@ -45,9 +51,9 @@ classDiagram
         +explain() str
     }
 
+    Owner "1" --> "0..*" Pet : manages
     Pet "1" --> "0..*" Task : has
-    Scheduler ..> Owner : reads constraints
-    Scheduler ..> Pet : reads tasks
+    Scheduler ..> Owner : reads constraints + get_all_tasks()
     Scheduler ..> DailyPlan : creates
     DailyPlan "1" --> "0..*" ScheduledTask : contains
     DailyPlan "1" --> "0..*" SkippedTask : left out
