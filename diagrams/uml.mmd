@@ -1,15 +1,49 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
+    %% PawPal+ initial design (draft)
+    %% Data classes: Owner, Pet, Task
+    %% Logic: Scheduler (stateless)
+    %% Result: DailyPlan made of ScheduledTask entries
 
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Owner {
+        +str name
+        +int available_minutes
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Pet {
+        +str name
+        +str species
+        +list~Task~ tasks
+        +add_task(task) None
     }
 
-    ClassName --> AnotherClass : relationship
+    class Task {
+        +str title
+        +int duration_minutes
+        +str priority
+    }
+
+    class Scheduler {
+        +build_plan(owner, pet) DailyPlan
+        -rank_tasks(tasks) list~Task~
+        -fits_in_budget(task, minutes_left) bool
+    }
+
+    class ScheduledTask {
+        +Task task
+        +str start_time
+        +str reason
+    }
+
+    class DailyPlan {
+        +list~ScheduledTask~ entries
+        +list~Task~ skipped
+        +explain() str
+    }
+
+    Owner "1" --> "1" Pet : owns
+    Pet "1" --> "0..*" Task : has
+    Scheduler ..> Owner : reads constraints
+    Scheduler ..> Pet : reads tasks
+    Scheduler ..> DailyPlan : creates
+    DailyPlan "1" --> "0..*" ScheduledTask : contains
+    ScheduledTask --> Task : schedules
