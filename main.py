@@ -71,6 +71,7 @@ def print_schedule(owner: Owner, plan: DailyPlan) -> None:
 
 
 def main() -> None:
+    """Build a sample owner with two pets, schedule their tasks, and print the plan."""
     owner = Owner(name="Jordan", available_minutes=90)
 
     biscuit = Pet(name="Biscuit", species="dog")

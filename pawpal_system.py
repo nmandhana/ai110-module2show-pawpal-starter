@@ -50,6 +50,7 @@ class Task:
     pet_name: str = ""  # set by Pet.add_task
 
     def __post_init__(self):
+        """Reject a non-positive duration or an unknown priority or frequency."""
         # Validate here rather than in Pet.add_task so an invalid Task can't
         # even be constructed, no matter where it comes from.
         if self.duration_minutes <= 0:
@@ -77,10 +78,11 @@ class Pet:
     tasks: list[Task] = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
-        """Add a care task. Field validation lives in Task itself
-        (__post_init__); this doorway remains for list-level rules
-        (e.g. rejecting duplicate titles later) and stamps the task
-        with this pet's name so plans can attribute tasks."""
+        """Add a care task to this pet and stamp it with the pet's name.
+
+        Field validation lives in Task itself (__post_init__); this doorway
+        remains for list-level rules (e.g. rejecting duplicate titles later),
+        and the name stamp lets multi-pet plans attribute each task."""
         task.pet_name = self.name
         self.tasks.append(task)
 
@@ -134,8 +136,10 @@ class DailyPlan:
     skipped: list[SkippedTask] = field(default_factory=list)
 
     def explain(self) -> str:
-        """Return a human-readable explanation of the plan, built from the
-        reasons recorded by the Scheduler (plus why skipped tasks were left out)."""
+        """Return the plan as readable text, one line per scheduled or skipped task.
+
+        Built from the reasons the Scheduler recorded at decision time,
+        including why each skipped task was left out."""
         if not self.entries and not self.skipped:
             return "No tasks to schedule."
         lines = []
@@ -164,10 +168,12 @@ class Scheduler:
     """
 
     def build_plan(self, owner: Owner) -> DailyPlan:
-        """Get every pet's tasks from owner.get_all_tasks(), skip completed
-        ones, rank the rest, keep the ones that fit owner.available_minutes,
-        assign back-to-back start times from 08:00, and record a reason for
-        every choice — chosen and skipped alike."""
+        """Build today's plan from all of the owner's pets' unfinished tasks.
+
+        Gets tasks via owner.get_all_tasks(), skips completed ones, ranks the
+        rest, keeps the ones that fit owner.available_minutes, assigns
+        back-to-back start times from 08:00, and records a reason for every
+        choice — chosen and skipped alike."""
         todo = [t for t in owner.get_all_tasks() if not t.completed]
         plan = DailyPlan()
         minutes_left = owner.available_minutes
@@ -195,11 +201,12 @@ class Scheduler:
         return plan
 
     def _rank_tasks(self, tasks: list[Task]) -> list[Task]:
-        """Return tasks in scheduling order: priority first (high before low),
-        then daily before weekly on ties (a daily task skipped today is a
-        missed day; a weekly one has more chances), then shorter duration
-        first (fits more tasks into the budget). sorted() is stable, so
-        remaining ties keep pet order — plans are deterministic."""
+        """Return tasks sorted by priority, then daily before weekly, then shortest first.
+
+        Daily beats weekly on ties because a daily task skipped today is a
+        missed day, while a weekly one has more chances; shorter-first fits
+        more tasks into the budget. sorted() is stable, so remaining ties
+        keep pet order — plans are deterministic."""
         return sorted(
             tasks,
             key=lambda t: (
