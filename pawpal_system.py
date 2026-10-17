@@ -63,6 +63,10 @@ class Task:
                 f"Unknown frequency {self.frequency!r}; expected one of {list(FREQUENCIES)}"
             )
 
+    def mark_complete(self) -> None:
+        """Mark this task as done so the Scheduler leaves it out of the plan."""
+        self.completed = True
+
 
 @dataclass
 class Pet:
