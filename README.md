@@ -193,26 +193,54 @@ What to look for:
 
 ```bash
 # Run the full test suite:
-pytest
+python -m pytest
 
 # Run with coverage (needs `pip install pytest-cov`, not in requirements.txt):
 pytest --cov
 ```
 
-`pytest.ini` points pytest at the `tests/` folder and adds the project root to the import path, so plain `pytest` works from the project folder.
+**What the tests cover:** the scheduler's core behaviors — **sorting** tasks into chronological order, **filtering** by pet and completion status, **recurring tasks** (completing a daily task creates one for the next day, a weekly one for a week later), **conflict detection** (tasks at the same or overlapping times are flagged with a warning, for the same pet or different pets), and **budget and priority** rules (most important tasks first, never over the available time). They also cover edge cases such as a pet with no tasks, two tasks at the exact same time, overdue tasks, and dates that cross a month or year end. A second file drives the Streamlit app itself to check that each button and form works.
 
-There are 106 tests in two files:
+`pytest.ini` points pytest at the `tests/` folder and adds the project root to the import path, so `python -m pytest` (or plain `pytest`) works from the project folder.
+
+**Test plan — core behaviors and edge cases**
+
+| Behavior | Happy path | Edge cases |
+|----------|------------|------------|
+| **Sorting correctness** (`sort_by_time()`) | Tasks added out of order come back in chronological order, across the 9 → 10 o'clock boundary | Flexible tasks last in added order; two tasks at the exact same time keep their added order; empty list; input list not changed |
+| **Recurrence logic** (`mark_complete()`, `next_occurrence()`, `complete_task()`) | Completing a daily task creates a new one due the following day; weekly → 7 days later | Overdue task → next due tomorrow, not in the past; task finished early; month end, year end and leap day; tomorrow's copy stays out of today's plan |
+| **Conflict detection** (`detect_conflicts()`, `build_plan()`) | Two tasks at the same time are flagged with a warning, for the same pet or different pets | Overlapping (not identical) times; back-to-back tasks are *not* conflicts; flexible, completed and other-day tasks ignored; clashing tasks skipped for time still flagged; no crash when both fit |
+| **Time budget and priority** (`build_plan()`) | Higher-priority tasks first, never over the available minutes | A smaller task still fits after a bigger one is skipped; zero-gap appointments; task past midnight |
+| **Empty inputs** | — | Owner with no pets; a pet with no tasks (planning, filtering and conflict checks all still work) |
+
+There are 109 tests in two files:
 
 | File | What it checks |
 |------|----------------|
-| `tests/test_pawpal.py` (84) | Task creation and validation (duration, priority, frequency, time); `mark_complete()` (and the next occurrence it creates); adding, editing and removing tasks and pets; the duplicate-task rule; priority ordering and tie-breaks; the time budget and skip reasons; fixed-time booking, gap filling around appointments, conflicts, back-to-back tasks, tasks past midnight; `detect_conflicts()` for the same pet, different pets, identical start times (with a "starts at the same time" message), same-time tasks warning instead of crashing when both fit the budget, every pair of three overlapping tasks, and the cases that aren't conflicts (touching ends, flexible, completed, other days), plus plan warnings for tasks skipped for time and for an overdue task clashing with today's; refunding the minutes of a task that finds no free slot; running budget totals in reasons; skipped tasks in rank order; start-time order and `end_time`; recurrence (`next_occurrence()`, `complete_task()`), due dates and overdue tasks; `sort_by_time()`; `filter_tasks()` by status, by pet and both together; multi-pet and empty plans. |
+| `tests/test_pawpal.py` (87) | Task creation and validation (duration, priority, frequency, time); `mark_complete()` (and the next occurrence it creates); adding, editing and removing tasks and pets; the duplicate-task rule; priority ordering and tie-breaks; the time budget and skip reasons; fixed-time booking, gap filling around appointments, conflicts, back-to-back tasks, tasks past midnight; `detect_conflicts()` for the same pet, different pets, identical start times (with a "starts at the same time" message), same-time tasks warning instead of crashing when both fit the budget, every pair of three overlapping tasks, and the cases that aren't conflicts (touching ends, flexible, completed, other days), plus plan warnings for tasks skipped for time and for an overdue task clashing with today's; refunding the minutes of a task that finds no free slot; running budget totals in reasons; skipped tasks in rank order; start-time order and `end_time`; recurrence (`next_occurrence()`, `complete_task()`), due dates and overdue tasks; `sort_by_time()` (including same-time ties and an empty list); `filter_tasks()` by status, by pet and both together; multi-pet and empty plans. |
 | `tests/test_app.py` (22) | The Streamlit app run headlessly with `AppTest`: adding pets and tasks (including fixed times), error messages for blank/duplicate/invalid input, state surviving reruns, Mark complete, Delete task, the edit form, Remove pet, the task table's time order, the pet and status filters (including no matches), weekly tasks coming back in 7 days, conflict warnings in the task list and schedule, and the generated schedule, skipped table and explanation. |
 
-Result of the last run:
+Terminal output of a successful run (`python -m pytest`):
 
 ```
-============================== 106 passed in 4.08s ==============================
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/ankit/Documents/Nishi/Study Docs/CodePath/ai110-module2show-pawpal-starter
+configfile: pytest.ini
+testpaths: tests
+collected 109 items
+
+tests/test_app.py ......................                                 [ 20%]
+tests/test_pawpal.py ................................................... [ 66%]
+....................................                                     [100%]
+
+============================= 109 passed in 3.87s ==============================
 ```
+
+**Confidence Level: ★★★★☆ (4/5)**
+
+- **Why 4:** all 109 tests pass. Every scheduling rule (sorting, filtering, recurrence, conflict detection, budget and priority) has tests that check exact results — titles, start times, due dates and warning text — not just "something came back". The edge cases most likely to break a scheduler (same-time tasks, overdue tasks, month/year ends, empty pets) are covered, and the Streamlit app is tested button by button. A refactor of `build_plan()` was also checked against the previous version on 2,000 random inputs with no differences.
+- **Why not 5:** the tests only cover situations I thought of. Some combinations are untested (for example, a fixed-time task that gets a second try after a refund and then clashes with a flexible task placed in the meantime), the app was tested headlessly rather than by clicking through a real browser, and the scheduler is greedy — it's tested to follow its rules, not to find the best possible plan.
 
 ## 📐 Smarter Scheduling
 

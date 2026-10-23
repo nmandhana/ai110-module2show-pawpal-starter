@@ -123,9 +123,10 @@ The most helpful prompts were the ones that asked the AI to **check or explain**
 **How I verified the results**
 
 - **Ran the code, not just read it.** I ran `python main.py` after every change and checked the schedule by hand. At that stage (before fixed times were added), the two 10-minute feedings came first, the completed "Heartworm pill" was missing, the 85 minutes used stayed under the 90 available, and the two low-priority weekly tasks were skipped because only 5 minutes were left.
-- **Ran the tests.** `pytest` passed all 17 tests at that point, including the two required ones (the suite has since grown to 106 — see section 4). When the AI changed docstrings, I re-ran the tests to make sure no code had changed by accident.
+- **Ran the tests.** `pytest` passed all 17 tests at that point, including the two required ones (the suite has since grown to 109 — see section 4). When the AI changed docstrings, I re-ran the tests to make sure no code had changed by accident.
 - **Checked requirements line by line.** For `main.py`, I compared the script against each item in the assignment instead of assuming "it runs" meant "it's done". I did the same for the sorting and filtering step, and it caught a real gap: `sort_by_time()` and `filter_tasks()` were implemented, tested and used in the app, but `main.py` never called them, and only one demo task had a fixed time, so there was nothing out of order to sort. I gave four tasks fixed times added out of clock order (17:00, 07:30, 18:00, 08:15) and made the demo print the tasks as added, sorted, and filtered by pet and status before the schedule. (Later, for conflict detection, Grooming moved to 17:30 and Nail trim got 18:00 — the same time as Play session — so the demo also shows two tasks at the same time and the warning it prints.)
 - **Asked the AI to prove its claims.** When it said every method had a docstring, it ran a script that listed any function without one (none were missing) instead of me taking its word for it. When it updated the README, I asked it to use only output that actually exists today and leave the unfinished parts (like the Streamlit walkthrough) as placeholders, so the README doesn't describe features I haven't built.
+- **Debugged a failing test run.** When I changed recurring tasks to count from today, six tests failed. Asking "is the bug in my test code or my `pawpal_system.py` logic?" showed it was the tests: they used a fixed date (`TODAY = 2026-10-21`) while the new code counted from the real date (2026-10-23), so the expected dates were two days off. The fix was to let `mark_complete()` take the completion date and pass `TODAY` in the tests, so they don't depend on the calendar. I reran `python -m pytest` until everything passed.
 - **Kept the UML in sync.** When `mark_complete()` was added to `Task`, I made sure it was added to `diagrams/uml.mmd` too, so the diagram still matches the code.
 
 The biggest lesson: the AI is fast and usually right, but it will sometimes do more than I asked or make choices I didn't make. Asking "what is this for?" and "does this actually meet the requirement?" kept me in charge of the design.
@@ -139,9 +140,9 @@ The biggest lesson: the AI is fast and usually right, but it will sometimes do m
 - What behaviors did you test?
 - Why were these tests important?
 
-There are 106 tests in two files.
+There are 109 tests in two files.
 
-`tests/test_pawpal.py` (84 tests) checks the logic layer directly:
+`tests/test_pawpal.py` (87 tests) checks the logic layer directly:
 
 - **Task basics** — tasks can't be created with a bad duration, priority, frequency or time; `mark_complete()` flips the status and returns the next occurrence; adding a task stamps the pet's name.
 - **Ranking and budget** — priority order, the daily-before-weekly and shortest-first tie-breaks, never going over the available minutes, a smaller task still fitting after a bigger one is skipped, and skipped tasks carrying a reason.

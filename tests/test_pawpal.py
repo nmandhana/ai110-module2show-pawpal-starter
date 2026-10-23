@@ -287,6 +287,24 @@ def test_sort_by_time_does_not_change_input():
     assert [t.title for t in tasks] == ["B", "A"]
 
 
+def test_sort_by_time_keeps_same_time_tasks_in_added_order():
+    """Two tasks at the exact same time stay in the order they were added."""
+    tasks = [
+        Task("Play", 20, "medium", time="18:00"),
+        Task("Breakfast", 10, "high", time="07:00"),
+        Task("Nail trim", 15, "low", time="18:00"),
+    ]
+
+    result = Scheduler().sort_by_time(tasks)
+
+    assert [t.title for t in result] == ["Breakfast", "Play", "Nail trim"]
+
+
+def test_sort_by_time_with_no_tasks_returns_empty_list():
+    """Sorting an empty list gives an empty list, not an error."""
+    assert Scheduler().sort_by_time([]) == []
+
+
 # --- Fixed times and conflicts -------------------------------------------------
 
 
@@ -764,3 +782,19 @@ def test_empty_owner_gives_empty_plan():
     assert isinstance(plan, DailyPlan)
     assert plan.entries == [] and plan.skipped == []
     assert plan.explain() == "No tasks to schedule."
+
+
+def test_pet_with_no_tasks_is_handled():
+    """A pet with no tasks doesn't break planning, filtering or conflict checks,
+    and doesn't stop another pet's tasks from being planned."""
+    empty = Pet(name="Rex", species="dog")
+    busy = Pet(name="Mochi", species="cat")
+    busy.add_task(Task("Feeding", 10, "high", due_date=TODAY))
+    owner = make_owner(60, empty, busy)
+
+    plan = Scheduler().build_plan(owner, TODAY)
+
+    assert [e.task.title for e in plan.entries] == ["Feeding"]
+    assert owner.filter_tasks(pet_name="Rex") == []
+    assert Scheduler().detect_conflicts(empty.tasks) == []
+    assert Scheduler().build_plan(make_owner(60, empty), TODAY).explain() == "No tasks to schedule."
