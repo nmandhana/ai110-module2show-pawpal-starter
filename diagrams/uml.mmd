@@ -43,8 +43,9 @@ classDiagram
     class Scheduler {
         +build_plan(owner, day) DailyPlan
         +sort_by_time(tasks) list~Task~
+        +find_conflicts(tasks, day) list~tuple~
         +detect_conflicts(tasks, day) list~str~
-        -rank_tasks(tasks) list~Task~
+        +rank_tasks(tasks) list~Task~
         -fits_in_budget(task, minutes_left) bool
         -find_conflict(start, end, booked) ScheduledTask
         -first_free_slot(duration, booked) int

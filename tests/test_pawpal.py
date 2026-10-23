@@ -537,6 +537,19 @@ def test_detect_conflicts_ignores_non_clashes(other):
     assert Scheduler().detect_conflicts([meds, other]) == []
 
 
+def test_find_conflicts_returns_the_clashing_task_pairs():
+    """find_conflicts() gives the Task pairs themselves, earlier start first,
+    so the app can say which task keeps the slot."""
+    walk = Task("Walk", 30, "high", time="09:00", due_date=TODAY, pet_name="Biscuit")
+    vet = Task("Vet call", 15, "medium", time="09:15", due_date=TODAY, pet_name="Mochi")
+    lunch = Task("Lunch", 10, "high", time="12:00", due_date=TODAY, pet_name="Mochi")
+
+    pairs = Scheduler().find_conflicts([vet, lunch, walk])
+
+    assert pairs == [(walk, vet)]
+    assert Scheduler().rank_tasks(list(pairs[0]))[0] is walk  # high beats medium
+
+
 def test_detect_conflicts_with_no_tasks_returns_empty_list():
     """No tasks means no warnings — and no error."""
     assert Scheduler().detect_conflicts([]) == []

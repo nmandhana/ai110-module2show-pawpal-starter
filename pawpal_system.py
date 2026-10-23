@@ -319,7 +319,7 @@ class Scheduler:
         plan.warnings lists every overlap between the day's fixed-time
         tasks (see detect_conflicts), even ones skipped for lack of time."""
         day = day or date.today()
-        ranked = self._rank_tasks(
+        ranked = self.rank_tasks(
             [t for t in owner.get_all_tasks() if not t.completed and t.due_date <= day]
         )
         plan = DailyPlan(warnings=self.detect_conflicts(ranked, day))
@@ -413,8 +413,10 @@ class Scheduler:
             reason += f" (overdue since {task.due_date.isoformat()})"
         return f"{reason}; {used}/{budget} min used after this"
 
-    def detect_conflicts(self, tasks: list[Task], day: Optional[date] = None) -> list[str]:
-        """Return a warning for each pair of fixed-time tasks whose times overlap.
+    def find_conflicts(
+        self, tasks: list[Task], day: Optional[date] = None
+    ) -> list[tuple[Task, Task]]:
+        """Return each pair of fixed-time tasks whose times overlap, earlier start first.
 
         Checks every pair, whether both tasks belong to the same pet or to
         different pets. Two tasks clash if they fall on the same day and
@@ -424,8 +426,9 @@ class Scheduler:
 
         Each task's own due_date is its day, unless `day` is given: then
         only tasks due by `day` are checked, all as if on `day` (that's
-        how build_plan treats overdue tasks). Returns warnings rather than
-        raising, so callers can show them and carry on; [] means no clashes."""
+        how build_plan treats overdue tasks). Returns the Task pairs so a
+        UI can say more than a fixed message; detect_conflicts() turns
+        them into warning text."""
         timed = self.sort_by_time(
             [
                 t
@@ -433,23 +436,35 @@ class Scheduler:
                 if t.time is not None and not t.completed and (day is None or t.due_date <= day)
             ]
         )
-        warnings = []
+        pairs = []
         for i, a in enumerate(timed):
             a_start = parse_time(a.time)
-            a_end = a_start + a.duration_minutes
             for b in timed[i + 1 :]:
                 if day is None and a.due_date != b.due_date:
                     continue
                 b_start = parse_time(b.time)
-                b_end = b_start + b.duration_minutes
-                if a_start < b_end and b_start < a_end:
-                    who = "same pet" if a.pet_name == b.pet_name else "different pets"
-                    clash = "starts at the same time as" if a_start == b_start else "overlaps"
-                    warnings.append(
-                        f"{a.pet_name}'s {a.title} ({a.time}–{format_time(a_end)}) {clash} "
-                        f"{b.pet_name}'s {b.title} ({b.time}–{format_time(b_end)}) "
-                        f"on {(day or a.due_date).isoformat()} — {who}"
-                    )
+                if a_start < b_start + b.duration_minutes and b_start < a_start + a.duration_minutes:
+                    pairs.append((a, b))
+        return pairs
+
+    def detect_conflicts(self, tasks: list[Task], day: Optional[date] = None) -> list[str]:
+        """Return a warning for each pair of fixed-time tasks whose times overlap.
+
+        Uses find_conflicts() for the pairs (same rules: same pet or
+        different pets, same day, overlapping time ranges). Returns
+        warnings rather than raising, so callers can show them and carry
+        on; [] means no clashes."""
+        warnings = []
+        for a, b in self.find_conflicts(tasks, day):
+            a_start, b_start = parse_time(a.time), parse_time(b.time)
+            who = "same pet" if a.pet_name == b.pet_name else "different pets"
+            clash = "starts at the same time as" if a_start == b_start else "overlaps"
+            warnings.append(
+                f"{a.pet_name}'s {a.title} ({a.time}–{format_time(a_start + a.duration_minutes)}) "
+                f"{clash} {b.pet_name}'s {b.title} "
+                f"({b.time}–{format_time(b_start + b.duration_minutes)}) "
+                f"on {(day or a.due_date).isoformat()} — {who}"
+            )
         return warnings
 
     def sort_by_time(self, tasks: list[Task]) -> list[Task]:
@@ -462,7 +477,7 @@ class Scheduler:
         keep their original order. Returns a new list; the input is unchanged."""
         return sorted(tasks, key=lambda t: (t.time is None, t.time or ""))
 
-    def _rank_tasks(self, tasks: list[Task]) -> list[Task]:
+    def rank_tasks(self, tasks: list[Task]) -> list[Task]:
         """Return tasks sorted by priority, then daily before weekly, then shortest first.
 
         Daily beats weekly on ties because a daily task skipped today is a

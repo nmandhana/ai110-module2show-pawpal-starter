@@ -134,13 +134,28 @@ def test_generate_schedule_shows_plan_and_skipped(app):
     assert not app.exception
 
     # Tables on the page: [0] current tasks, [1] schedule, [2] skipped.
-    schedule = app.table[1].value
-    skipped = app.table[2].value
-    assert list(schedule["task"]) == ["Feeding", "Walk"]
-    assert list(schedule["start"]) == ["08:00", "08:10"]
-    assert list(skipped["task"]) == ["Grooming"]
-    assert "not enough time" in skipped["why"].iloc[0]
-    assert "2 scheduled · 40/40 min used · 1 skipped" in app.caption[-1].value
+    schedule = app.dataframe[1].value
+    skipped = app.dataframe[2].value
+    assert list(schedule["Task"]) == ["Feeding", "Walk"]
+    assert list(schedule["Start"]) == ["08:00", "08:10"]
+    assert list(schedule["Priority"]) == ["🔴 High", "🔴 High"]
+    assert list(skipped["Task"]) == ["Grooming"]
+    assert list(skipped["Priority"]) == ["🟢 Low"]
+    assert "not enough time" in skipped["Why skipped"].iloc[0]
+    # Summary metrics: scheduled, time used, skipped, conflicts.
+    assert [m.value for m in app.metric] == ["2", "40/40 min", "1", "0"]
+    assert not app.success  # something was skipped, so no "everything fits"
+
+
+def test_everything_fits_shows_success(app):
+    """When nothing is skipped, the schedule says so with a success message."""
+    add_pet(app, "Biscuit")
+    add_task(app, "Biscuit", "Walk", 30)
+
+    widget(app.button, "Generate schedule").click().run()
+
+    assert any("Everything fits today" in s.value for s in app.success)
+    assert [m.value for m in app.metric] == ["1", "30/60 min", "0", "0"]
 
 
 def test_generate_with_no_tasks_shows_message(app):
@@ -160,9 +175,9 @@ def test_fixed_time_task_is_scheduled_at_its_time(app):
     assert app.session_state.owner.get_all_tasks()[0].time == "09:30"
 
     widget(app.button, "Generate schedule").click().run()
-    schedule = app.table[1].value
-    assert list(schedule["task"]) == ["Walk", "📌 Meds"]
-    assert list(schedule["start"]) == ["08:00", "09:30"]
+    schedule = app.dataframe[1].value
+    assert list(schedule["Task"]) == ["Walk", "📌 Meds"]
+    assert list(schedule["Start"]) == ["08:00", "09:30"]
 
 
 def test_bad_time_shows_error(app):
@@ -268,14 +283,14 @@ def test_task_filters_limit_table_and_dropdown(app):
     widget(app.selectbox, "Show status").set_value("To do").run()
 
     # Mochi's unfinished tasks: Feeding, and tomorrow's Brush.
-    assert list(app.table[0].value["title"]) == ["Feeding", "Brush"]
-    assert list(app.table[0].value["done"]) == ["", ""]
+    assert list(app.dataframe[0].value["Task"]) == ["Feeding", "Brush"]
+    assert list(app.dataframe[0].value["Status"]) == ["⏳ To do", "⏳ To do"]
     assert len(widget(app.selectbox, "Choose a task to update").options) == 2
     assert "Showing 2 of 4 tasks." in [c.value for c in app.caption]
 
     widget(app.selectbox, "Show status").set_value("Done").run()
-    assert list(app.table[0].value["title"]) == ["Brush"]
-    assert list(app.table[0].value["done"]) == ["✓"]
+    assert list(app.dataframe[0].value["Task"]) == ["Brush"]
+    assert list(app.dataframe[0].value["Status"]) == ["✅ Done"]
 
 
 def test_filters_with_no_matches_show_message(app):
@@ -291,21 +306,41 @@ def test_filters_with_no_matches_show_message(app):
 
 
 def test_conflicting_tasks_show_warning(app):
-    """Overlapping fixed-time tasks for different pets show a warning in the
-    task list right away, and again above the schedule."""
+    """Overlapping fixed-time tasks for different pets show one grouped warning
+    in the task list right away — what clashes, who keeps the slot, how to fix
+    it — and again above the schedule, saying what actually happened."""
     add_pet(app, "Biscuit")
     add_pet(app, "Mochi", "cat")
     add_task(app, "Biscuit", "Walk", 30, time="09:00")
     assert not app.warning
 
-    add_task(app, "Mochi", "Vet call", 15, time="09:15")
+    add_task(app, "Mochi", "Vet call", 15, "medium", time="09:15")
     assert len(app.warning) == 1
-    assert "Biscuit's Walk (09:00–09:30) overlaps Mochi's Vet call" in app.warning[0].value
+    task_warning = app.warning[0].value
+    assert "1 time conflict**" in task_warning
+    assert "Biscuit's **Walk** and Mochi's **Vet call** overlap (09:00–09:30 and 09:15–09:30)" in task_warning
+    assert "**Walk** (🔴 High) keeps the slot and **Vet call** is skipped" in task_warning
+    assert "**To fix:**" in task_warning
 
     widget(app.button, "Generate schedule").click().run()
     assert not app.exception
     assert len(app.warning) == 2  # task list + schedule
-    assert "different pets" in app.warning[1].value
+    plan_warning = app.warning[1].value
+    assert "**Walk** kept 09:00–09:30 (🔴 High); **Vet call** was skipped." in plan_warning
+    assert [m.value for m in app.metric][3] == "1"  # Conflicts metric
+
+
+def test_same_time_tasks_for_one_pet_grouped_in_one_warning(app):
+    """Several clashes share one warning box; same-time tasks say "both start at"."""
+    add_pet(app, "Mochi", "cat")
+    add_task(app, "Mochi", "Play", 20, "medium", time="18:00")
+    add_task(app, "Mochi", "Nail trim", 15, "low", time="18:00")
+    add_task(app, "Mochi", "Brush", 10, "low", time="18:10")
+
+    assert len(app.warning) == 1
+    text = app.warning[0].value
+    assert "3 time conflicts**" in text
+    assert "Mochi's **Play** and **Nail trim** both start at **18:00**" in text
 
 
 def test_task_table_is_sorted_by_time(app):
@@ -315,9 +350,10 @@ def test_task_table_is_sorted_by_time(app):
     add_task(app, "Biscuit", "Feeding", 10)
     add_task(app, "Biscuit", "Walk", 30, time="07:30")
 
-    table = app.table[0].value
-    assert list(table["title"]) == ["Walk", "Grooming", "Feeding"]
-    assert list(table["time"]) == ["📌 07:30", "📌 17:30", "flexible"]
+    table = app.dataframe[0].value
+    assert list(table["Task"]) == ["Walk", "Grooming", "Feeding"]
+    assert list(table["Time"]) == ["📌 07:30", "📌 17:30", "flexible"]
+    assert list(table["Priority"]) == ["🔴 High", "🔴 High", "🔴 High"]
 
 
 def test_mark_complete_weekly_task_is_next_due_in_a_week(app):

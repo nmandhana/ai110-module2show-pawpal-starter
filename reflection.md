@@ -77,6 +77,8 @@ A third tradeoff is in conflict detection. `detect_conflicts()` checks whether t
 
 A fourth tradeoff is **readability over performance**. The scheduler re-sorts the booked tasks every time a flexible task looks for a gap, and `detect_conflicts()` compares every pair of tasks, so the work grows quickly as tasks are added. Keeping the list sorted with `bisect`, or stopping the pair loop early once tasks no longer overlap, would be faster, but each makes the code harder to read and check. A pet owner has a handful of tasks a day, where the difference can't be measured, so I chose code that is easy to follow and test (see the `build_plan()` review in section 3).
 
+How a conflict is *shown* was a design decision too. The scheduler's first warnings were accurate but read like log messages, and each clash got its own yellow box. I asked myself what a pet owner actually needs from the warning: *what* clashes, *what PawPal+ will do* about it, and *how to fix it*. So the app now groups every clash into one `st.warning` with a plain-language bullet each, names the task that keeps the slot (using the scheduler's own `rank_tasks()`, so the warning can't disagree with the schedule), and ends with a "To fix" hint. It appears in **Your Tasks**, where the owner can edit the task, and again after **Generate schedule** with what actually happened. The tradeoff: the first warning can only predict ("*if* both make the schedule"), because whether a task makes the plan also depends on the time budget — which is why the schedule shows the real outcome.
+
 ---
 
 ## 3. AI Collaboration
@@ -123,13 +125,31 @@ The most helpful prompts were the ones that asked the AI to **check or explain**
 **How I verified the results**
 
 - **Ran the code, not just read it.** I ran `python main.py` after every change and checked the schedule by hand. At that stage (before fixed times were added), the two 10-minute feedings came first, the completed "Heartworm pill" was missing, the 85 minutes used stayed under the 90 available, and the two low-priority weekly tasks were skipped because only 5 minutes were left.
-- **Ran the tests.** `pytest` passed all 17 tests at that point, including the two required ones (the suite has since grown to 109 — see section 4). When the AI changed docstrings, I re-ran the tests to make sure no code had changed by accident.
+- **Ran the tests.** `pytest` passed all 17 tests at that point, including the two required ones (the suite has since grown to 112 — see section 4). When the AI changed docstrings, I re-ran the tests to make sure no code had changed by accident.
 - **Checked requirements line by line.** For `main.py`, I compared the script against each item in the assignment instead of assuming "it runs" meant "it's done". I did the same for the sorting and filtering step, and it caught a real gap: `sort_by_time()` and `filter_tasks()` were implemented, tested and used in the app, but `main.py` never called them, and only one demo task had a fixed time, so there was nothing out of order to sort. I gave four tasks fixed times added out of clock order (17:00, 07:30, 18:00, 08:15) and made the demo print the tasks as added, sorted, and filtered by pet and status before the schedule. (Later, for conflict detection, Grooming moved to 17:30 and Nail trim got 18:00 — the same time as Play session — so the demo also shows two tasks at the same time and the warning it prints.)
 - **Asked the AI to prove its claims.** When it said every method had a docstring, it ran a script that listed any function without one (none were missing) instead of me taking its word for it. When it updated the README, I asked it to use only output that actually exists today and leave the unfinished parts (like the Streamlit walkthrough) as placeholders, so the README doesn't describe features I haven't built.
 - **Debugged a failing test run.** When I changed recurring tasks to count from today, six tests failed. Asking "is the bug in my test code or my `pawpal_system.py` logic?" showed it was the tests: they used a fixed date (`TODAY = 2026-10-21`) while the new code counted from the real date (2026-10-23), so the expected dates were two days off. The fix was to let `mark_complete()` take the completion date and pass `TODAY` in the tests, so they don't depend on the calendar. I reran `python -m pytest` until everything passed.
-- **Kept the UML in sync.** When `mark_complete()` was added to `Task`, I made sure it was added to `diagrams/uml.mmd` too, so the diagram still matches the code.
+- **Kept the UML in sync.** When `mark_complete()` was added to `Task`, I made sure it was added to `diagrams/uml.mmd` too, so the diagram still matches the code. At the end of the project I asked the AI to check whether my UML diagram still matched my final `pawpal_system.py` and what it needed to show how my classes really interact. Instead of just trusting its answer, I had it run a script that compares every class, field and method in the code against the diagram. Nothing was missing, but some relationships weren't drawn: the Scheduler works directly on Tasks (ranking, sorting, finding conflicts), the Owner reads tasks across all pets, and a Pet books a task's next occurrence. I added those, plus the time helper functions, and saved it as `diagrams/uml_final.mmd`.
 
 The biggest lesson: the AI is fast and usually right, but it will sometimes do more than I asked or make choices I didn't make. Asking "what is this for?" and "does this actually meet the requirement?" kept me in charge of the design.
+
+**c. AI strategy**
+
+- Which AI coding assistant features were most effective for building your scheduler?
+- Give one example of an AI suggestion you rejected or modified to keep your system design clean.
+- How did using separate chat sessions for different phases help you stay organized?
+
+**Most effective features.** Three things helped me the most:
+
+1. **It could work on the whole project at once.** When I changed how recurring tasks pick their next due date, the change had to go into the code, the tests, the UML, the README and this reflection. The assistant updated all of them together, so I didn't have to hunt for every place that mentioned the old behavior.
+2. **It ran things instead of just telling me they worked.** It ran `python -m pytest`, ran `main.py` before and after a change to compare the output, clicked through the Streamlit app with a test script, and even compared my old and new `build_plan()` on 2,000 random task lists. Every "it works" came with proof I could look at.
+3. **It explained before it changed anything.** I often asked it to explain a requirement, compare it to my code and tell me the plan first. That's how we found real gaps: `main.py` never actually used `sort_by_time()` or `filter_tasks()`, a "pet with no tasks" test was mentioned but didn't exist, and daily tasks were counting their next due date from the wrong day.
+
+**A suggestion I rejected or modified.** When I asked how to simplify `build_plan()`, one idea was a shorter, more "Pythonic" version using the walrus operator and list comprehensions. I said no. The time budget changes after every task, and squeezing that into a comprehension would hide the step-by-step logic that makes the plan easy to explain. I only kept the simple fix: a small helper, `_book_or_skip()`, that removed the repeated code. Another time, the easy way to show "which task keeps the slot" in a conflict warning would have been to work it out inside `app.py`. But then the app would have its own copy of the ranking rule, and the two could end up disagreeing. So I made `rank_tasks()` public instead, and the warning and the schedule now use the same rule.
+
+**Separate chat sessions.** Honestly, I didn't keep my phases as separate as I should have — most of the later work (smarter scheduling, testing and the final polish) happened in one long chat. That taught me why separate sessions help. In a long chat, small details drift: the number of tests in my README went out of date more than once and had to be fixed. A new session for each phase starts clean, with just the files and that phase's requirements, so it's clearer what "done" means and old decisions don't get in the way. Next time I'll start a fresh session for each phase, especially for testing, so the focus stays on what to test instead of on code I just wrote.
+
+**Being the "lead architect".** The AI could write code, tests and docs much faster than me, but it couldn't decide what my app *should* do — that part was my job. I set the rules and made sure they were followed: the Scheduler only gets tasks through the Owner, every skipped task has to say why, a warning should never crash the app, and simple code is better than clever code. I also decided when something was actually finished. I didn't accept "done" until I saw proof — passing tests, matching output, or a check against the requirement. Being the lead architect meant I owned the *why* behind every change, and let the AI help with the *how*.
 
 ---
 
@@ -140,9 +160,9 @@ The biggest lesson: the AI is fast and usually right, but it will sometimes do m
 - What behaviors did you test?
 - Why were these tests important?
 
-There are 109 tests in two files.
+There are 112 tests in two files.
 
-`tests/test_pawpal.py` (87 tests) checks the logic layer directly:
+`tests/test_pawpal.py` (88 tests) checks the logic layer directly:
 
 - **Task basics** — tasks can't be created with a bad duration, priority, frequency or time; `mark_complete()` flips the status and returns the next occurrence; adding a task stamps the pet's name.
 - **Ranking and budget** — priority order, the daily-before-weekly and shortest-first tie-breaks, never going over the available minutes, a smaller task still fitting after a bigger one is skipped, and skipped tasks carrying a reason.
@@ -152,7 +172,7 @@ There are 109 tests in two files.
 - **Filtering** — `filter_tasks()` by completion status, by pet name, and both together, a pet with no tasks, results being the owner's real tasks (so marking one complete sticks), and a completed recurring task appearing as done while its next copy appears as to do.
 - **Editing** — the duplicate-task rule, `edit_task()` changing fields in place, a bad edit leaving the task untouched, and removing tasks and pets.
 
-`tests/test_app.py` (22 tests) runs the Streamlit app headlessly with `AppTest`, fills in the forms and clicks the buttons — adding pets and tasks, error messages, Mark complete, Delete, Edit, Remove pet, the pet and status filters, conflict warnings, and generating a schedule.
+`tests/test_app.py` (24 tests) runs the Streamlit app headlessly with `AppTest`, fills in the forms and clicks the buttons — adding pets and tasks, error messages, Mark complete, Delete, Edit, Remove pet, the pet and status filters, grouped conflict warnings, priority badges, the summary metrics, and generating a schedule.
 
 The scheduler tests matter most because the schedule is the whole point of the app, and its rules interact (budget, priority, fixed times) in ways that are easy to get wrong — the appointment bug in section 3b is an example. The app tests matter because a feature that works in the backend is no use if the button isn't wired to it; that's exactly the "built but not connected" problem the project had before.
 
@@ -179,10 +199,19 @@ Edge cases I would test next:
 
 - What part of this project are you most satisfied with?
 
+I'm most proud that PawPal+ **explains itself**. It doesn't just give you a schedule — every task says why it was picked, every skipped task says why it was left out, and when two tasks clash, the warning tells you which one wins and how to fix it. I'm also happy with how well it's tested. With 112 tests covering both the logic and the app, I can change something and know right away if I broke anything.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+- **Save the data.** Right now pets and tasks disappear when you refresh the page, because they only live in `st.session_state`. Saving them to a file would make the app actually usable day to day — and recurring tasks would make more sense if tomorrow's tasks were still there tomorrow.
+- **Help fix conflicts, not just report them.** The app could suggest the next free time ("move Brushing to 09:15?") and do it in one click.
+- **Owner preferences.** The scenario mentions preferences, but my scheduler only looks at priority and fixed times. Things like "walks in the morning" or "nothing after 9 pm" would make plans feel more personal.
+- **Try a smarter plan.** My scheduler picks tasks one by one (greedy), which is easy to explain but sometimes leaves time unused. I'd like to compare it with a version that tries different combinations — and only switch if it's really worth the extra complexity.
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+The biggest thing I learned is that **even when the AI writes most of the code, the design decisions and the checking are still my job.** The AI was fast and usually right, but not always. It counted a daily task's next due date from the wrong day, a test it said existed wasn't actually there, and some of its suggestions were clever but hard to read. I caught each one by asking it to check its work against the requirement and show me proof. Keeping my classes small, with one job each, made this much easier, because I could test and check each change on its own.

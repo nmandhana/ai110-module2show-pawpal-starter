@@ -1,0 +1,105 @@
+classDiagram
+    %% PawPal+ final design — matches pawpal_system.py as built.
+    %% Data classes: Task, Pet, Owner (Owner manages multiple pets)
+    %% Logic: Scheduler (stateless; reads tasks only via Owner.get_all_tasks)
+    %% Result: DailyPlan = ScheduledTask entries + SkippedTask leftovers
+    %%         + conflict warnings
+    %% Changes since the Phase 1 draft (diagrams/uml.mmd history):
+    %%   - Owner now manages pets (add/remove, get_all_tasks, filter_tasks)
+    %%   - Task gained frequency, completed, pet_name, time, due_date and
+    %%     recurrence (mark_complete, next_occurrence)
+    %%   - Pet gained edit/remove/complete_task and the duplicate rule
+    %%   - Scheduler takes only the owner (no pet), and gained sorting,
+    %%     conflict detection and fixed-time booking helpers
+    %%   - DailyPlan gained warnings; ScheduledTask gained end_time
+
+    class Owner {
+        +str name
+        +int available_minutes
+        +list~Pet~ pets
+        +add_pet(pet) None
+        +remove_pet(pet) None
+        +get_all_tasks() list~Task~
+        +filter_tasks(completed, pet_name) list~Task~
+    }
+
+    class Pet {
+        +str name
+        +str species
+        +list~Task~ tasks
+        +add_task(task) None
+        +edit_task(task, changes) None
+        +remove_task(task) None
+        +complete_task(task, completed_on) Task
+        -require_own(task) None
+        -check_duplicate(task, ignore) None
+    }
+
+    class Task {
+        +str title
+        +int duration_minutes
+        +str priority
+        +str frequency
+        +bool completed
+        +str pet_name
+        +Optional~str~ time
+        +date due_date
+        +mark_complete(completed_on) Task
+        +next_occurrence(completed_on) Task
+    }
+
+    class Scheduler {
+        +build_plan(owner, day) DailyPlan
+        +sort_by_time(tasks) list~Task~
+        +rank_tasks(tasks) list~Task~
+        +find_conflicts(tasks, day) list~tuple~
+        +detect_conflicts(tasks, day) list~str~
+        -book_or_skip(task, booked, plan) bool
+        -try_book(task, booked) str
+        -fits_in_budget(task, minutes_left) bool
+        -find_conflict(start, end, booked) ScheduledTask
+        -first_free_slot(duration, booked) int
+        -reason(task, day, used, budget) str
+    }
+
+    class DailyPlan {
+        +list~ScheduledTask~ entries
+        +list~SkippedTask~ skipped
+        +list~str~ warnings
+        +explain() str
+    }
+
+    class ScheduledTask {
+        +Task task
+        +str start_time
+        +str reason
+        +end_time() str
+    }
+
+    class SkippedTask {
+        +Task task
+        +str reason
+    }
+
+    class TimeHelpers {
+        <<module>>
+        +PRIORITY_ORDER dict
+        +FREQUENCY_DAYS dict
+        +parse_time(text) int
+        +format_time(minutes) str
+    }
+
+    Owner "1" --> "0..*" Pet : manages
+    Pet "1" --> "0..*" Task : has
+    Owner ..> Task : get_all_tasks() / filter_tasks()
+    Pet ..> Task : complete_task() adds next occurrence
+    Task ..> Task : next_occurrence() creates
+    Scheduler ..> Owner : reads available_minutes + get_all_tasks()
+    Scheduler ..> Task : ranks, sorts, finds conflicts
+    Scheduler ..> DailyPlan : creates
+    DailyPlan "1" --> "0..*" ScheduledTask : contains
+    DailyPlan "1" --> "0..*" SkippedTask : left out
+    ScheduledTask --> Task : schedules
+    SkippedTask --> Task : refers to
+    Scheduler ..> TimeHelpers : uses
+    Task ..> TimeHelpers : validates with

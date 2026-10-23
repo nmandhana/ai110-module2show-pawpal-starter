@@ -2,7 +2,40 @@ from datetime import date
 
 import streamlit as st
 
-from pawpal_system import FREQUENCIES, PRIORITY_ORDER, Owner, Pet, Scheduler, Task
+from pawpal_system import (
+    FREQUENCIES,
+    PRIORITY_ORDER,
+    Owner,
+    Pet,
+    Scheduler,
+    Task,
+    format_time,
+    parse_time,
+)
+
+# Colored badges make priority readable at a glance in every table.
+PRIORITY_BADGES = {"high": "🔴 High", "medium": "🟡 Medium", "low": "🟢 Low"}
+
+
+def time_range(task: Task) -> str:
+    """The task's fixed time as "HH:MM–HH:MM" (start to end)."""
+    start = parse_time(task.time)
+    return f"{task.time}–{format_time(start + task.duration_minutes)}"
+
+
+def clash_text(a: Task, b: Task) -> str:
+    """Plain-language description of two clashing tasks, for a warning bullet."""
+    if a.time == b.time:
+        what = f"both start at **{a.time}**"
+    else:
+        what = f"overlap ({time_range(a)} and {time_range(b)})"
+    whose = (
+        f"{a.pet_name}'s **{a.title}** and **{b.title}**"
+        if a.pet_name == b.pet_name
+        else f"{a.pet_name}'s **{a.title}** and {b.pet_name}'s **{b.title}**"
+    )
+    return f"{whose} {what}"
+
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
@@ -148,9 +181,29 @@ STATUS_FILTERS = {"All": None, "To do": False, "Done": True}
 if all_tasks:
     st.subheader("Your Tasks")
     # Checked across all pets as soon as tasks change, so a clash shows up
-    # when the task is added, not only when a schedule is built.
-    for warning in scheduler.detect_conflicts(all_tasks):
-        st.warning(f"⚠️ Time conflict: {warning}")
+    # when the task is added, not only when a schedule is built. All clashes
+    # go in one box: what overlaps, what PawPal+ will do, and how to fix it.
+    conflicts = scheduler.find_conflicts(all_tasks)
+    if conflicts:
+        lines = [
+            f"**⚠️ {len(conflicts)} time conflict{'s' if len(conflicts) > 1 else ''}** "
+            "— these fixed-time tasks overlap:",
+            "",
+        ]
+        for a, b in conflicts:
+            keeper, other = scheduler.rank_tasks([a, b])
+            when = "" if a.due_date == date.today() else f" on {a.due_date.isoformat()}"
+            lines.append(
+                f"- {clash_text(a, b)}{when}. If both make the schedule, **{keeper.title}** "
+                f"({PRIORITY_BADGES[keeper.priority]}) keeps the slot and "
+                f"**{other.title}** is skipped."
+            )
+        lines += [
+            "",
+            "**To fix:** choose one of these tasks below and change its time under "
+            "*Edit this task* — or mark it complete if it's already done.",
+        ]
+        st.warning("\n".join(lines))
     col1, col2 = st.columns(2)
     with col1:
         pet_filter = st.selectbox("Show pet", ["All pets"] + [p.name for p in owner.pets])
@@ -164,21 +217,22 @@ if all_tasks:
     if not shown:
         st.info("No tasks match these filters.")
     else:
-        st.table(
+        st.dataframe(
             [
                 {
-                    "pet": t.pet_name,
-                    "title": t.title,
-                    "time": f"📌 {t.time}" if t.time else "flexible",
-                    "duration_minutes": t.duration_minutes,
-                    "priority": t.priority,
-                    "frequency": t.frequency,
-                    "due": t.due_date.isoformat(),
-                    "done": "✓" if t.completed else "",
+                    "Time": f"📌 {t.time}" if t.time else "flexible",
+                    "Task": t.title,
+                    "Pet": t.pet_name,
+                    "Minutes": t.duration_minutes,
+                    "Priority": PRIORITY_BADGES[t.priority],
+                    "Repeats": t.frequency,
+                    "Due": t.due_date.isoformat(),
+                    "Status": "✅ Done" if t.completed else "⏳ To do",
                 }
                 # Timed tasks first in clock order, then flexible ones as added.
                 for t in scheduler.sort_by_time(shown)
-            ]
+            ],
+            hide_index=True,
         )
         st.caption(f"Showing {len(shown)} of {len(all_tasks)} tasks.")
 
@@ -271,41 +325,74 @@ if st.button("Generate schedule"):
     if not plan.entries and not plan.skipped:
         st.info("No tasks to schedule. Add some tasks above.")
     else:
-        for warning in plan.warnings:
-            st.warning(f"⚠️ Time conflict: {warning}")
+        # At-a-glance summary first, so the owner sees how the day went.
+        used = sum(e.task.duration_minutes for e in plan.entries)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Scheduled", len(plan.entries))
+        col2.metric("Time used", f"{used}/{owner.available_minutes} min")
+        col3.metric("Skipped", len(plan.skipped))
+        col4.metric("Conflicts", len(plan.warnings))
+        if plan.entries and not plan.skipped:
+            st.success("Everything fits today 🎉")
+
+        # For each clash, say what actually happened in this plan: which task
+        # kept the slot, which was skipped — and how to fix it.
+        conflicts = scheduler.find_conflicts(owner.get_all_tasks(), today)
+        if conflicts:
+            booked = {id(e.task): e for e in plan.entries}
+            lines = ["**⚠️ Time conflicts in today's plan:**", ""]
+            for a, b in conflicts:
+                kept = booked.get(id(a)) or booked.get(id(b))
+                if kept:
+                    other = b if kept.task is a else a
+                    outcome = (
+                        f"**{kept.task.title}** kept {kept.start_time}–{kept.end_time} "
+                        f"({PRIORITY_BADGES[kept.task.priority]}); **{other.title}** was skipped."
+                    )
+                else:
+                    outcome = "neither made today's plan (see Skipped), but they'd still clash."
+                lines.append(f"- {clash_text(a, b)} — {outcome}")
+            lines += [
+                "",
+                "**To fix:** change one task's time under *Your Tasks → Edit this task*, "
+                "then generate the schedule again.",
+            ]
+            st.warning("\n".join(lines))
+
         if plan.entries:
             st.markdown("#### Today's Schedule")
-            st.table(
+            st.dataframe(
                 [
                     {
-                        "start": e.start_time,
-                        "end": e.end_time,
-                        "task": ("📌 " if e.task.time else "") + e.task.title,
-                        "pet": e.task.pet_name,
-                        "minutes": e.task.duration_minutes,
-                        "priority": e.task.priority,
-                        "why": e.reason,
+                        "Start": e.start_time,
+                        "End": e.end_time,
+                        "Task": ("📌 " if e.task.time else "") + e.task.title,
+                        "Pet": e.task.pet_name,
+                        "Minutes": e.task.duration_minutes,
+                        "Priority": PRIORITY_BADGES[e.task.priority],
+                        "Why": e.reason,
                     }
                     for e in plan.entries
-                ]
+                ],
+                hide_index=True,
             )
         else:
             st.warning("Nothing fits in the time available.")
 
         if plan.skipped:
             st.markdown("#### Skipped")
-            st.table(
+            st.dataframe(
                 [
-                    {"task": s.task.title, "pet": s.task.pet_name, "why": s.reason}
+                    {
+                        "Task": s.task.title,
+                        "Pet": s.task.pet_name,
+                        "Priority": PRIORITY_BADGES[s.task.priority],
+                        "Why skipped": s.reason,
+                    }
                     for s in plan.skipped
-                ]
+                ],
+                hide_index=True,
             )
 
         with st.expander("Plan explanation (text)"):
             st.text(plan.explain())
-
-        used = sum(e.task.duration_minutes for e in plan.entries)
-        st.caption(
-            f"{len(plan.entries)} scheduled · {used}/{owner.available_minutes} min used · "
-            f"{len(plan.skipped)} skipped"
-        )
