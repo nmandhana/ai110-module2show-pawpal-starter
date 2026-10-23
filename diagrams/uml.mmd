@@ -9,7 +9,9 @@ classDiagram
         +int available_minutes
         +list~Pet~ pets
         +add_pet(pet) None
+        +remove_pet(pet) None
         +get_all_tasks() list~Task~
+        +filter_tasks(completed, pet_name) list~Task~
     }
 
     class Pet {
@@ -17,6 +19,11 @@ classDiagram
         +str species
         +list~Task~ tasks
         +add_task(task) None
+        +edit_task(task, **changes) None
+        +remove_task(task) None
+        +complete_task(task) Task
+        -require_own(task) None
+        -check_duplicate(task, ignore) None
     }
 
     class Task {
@@ -26,19 +33,28 @@ classDiagram
         +str frequency
         +bool completed
         +str pet_name
-        +mark_complete() None
+        +Optional~str~ time
+        +date due_date
+        +mark_complete() Task
+        +next_occurrence() Task
     }
 
     class Scheduler {
-        +build_plan(owner) DailyPlan
+        +build_plan(owner, day) DailyPlan
+        +sort_by_time(tasks) list~Task~
         -rank_tasks(tasks) list~Task~
         -fits_in_budget(task, minutes_left) bool
+        -find_conflict(start, end, booked) ScheduledTask
+        -first_free_slot(duration, booked) int
+        -try_book(task, booked) str
+        -reason(task, day, used, budget) str
     }
 
     class ScheduledTask {
         +Task task
         +str start_time
         +str reason
+        +end_time() str
     }
 
     class SkippedTask {
@@ -54,6 +70,7 @@ classDiagram
 
     Owner "1" --> "0..*" Pet : manages
     Pet "1" --> "0..*" Task : has
+    Task ..> Task : next_occurrence() creates
     Scheduler ..> Owner : reads constraints + get_all_tasks()
     Scheduler ..> DailyPlan : creates
     DailyPlan "1" --> "0..*" ScheduledTask : contains
