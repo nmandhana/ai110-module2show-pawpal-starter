@@ -26,6 +26,8 @@ with st.expander("How the schedule is built", expanded=False):
    it's skipped, with the reason shown.
 4. Tasks with a **fixed time** (📌) are booked at that time. If two fixed tasks
    overlap, the higher-ranked one keeps the slot and the other is skipped as a conflict.
+   Any overlap between fixed tasks — for the same pet or different pets — is also
+   shown as a ⚠️ warning, both in your task list and above the schedule.
 5. Flexible tasks fill the **earliest free gaps from 08:00**, around the fixed ones,
    so nothing overlaps. If one finds no gap, its minutes are given back and tasks
    that didn't fit earlier get one more try.
@@ -145,6 +147,10 @@ STATUS_FILTERS = {"All": None, "To do": False, "Done": True}
 
 if all_tasks:
     st.subheader("Your Tasks")
+    # Checked across all pets as soon as tasks change, so a clash shows up
+    # when the task is added, not only when a schedule is built.
+    for warning in scheduler.detect_conflicts(all_tasks):
+        st.warning(f"⚠️ Time conflict: {warning}")
     col1, col2 = st.columns(2)
     with col1:
         pet_filter = st.selectbox("Show pet", ["All pets"] + [p.name for p in owner.pets])
@@ -265,6 +271,8 @@ if st.button("Generate schedule"):
     if not plan.entries and not plan.skipped:
         st.info("No tasks to schedule. Add some tasks above.")
     else:
+        for warning in plan.warnings:
+            st.warning(f"⚠️ Time conflict: {warning}")
         if plan.entries:
             st.markdown("#### Today's Schedule")
             st.table(

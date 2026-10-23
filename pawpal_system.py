@@ -255,19 +255,22 @@ class SkippedTask:
 
 @dataclass
 class DailyPlan:
-    """The result of scheduling: entries in start-time order plus the tasks that didn't fit."""
+    """The result of scheduling: entries in start-time order, the tasks that
+    didn't fit, and warnings about fixed-time tasks that overlap."""
 
     entries: list[ScheduledTask] = field(default_factory=list)
     skipped: list[SkippedTask] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def explain(self) -> str:
-        """Return the plan as readable text, one line per scheduled or skipped task.
+        """Return the plan as readable text: conflict warnings first, then one
+        line per scheduled or skipped task.
 
         Built from the reasons the Scheduler recorded at decision time,
         including why each skipped task was left out."""
         if not self.entries and not self.skipped:
             return "No tasks to schedule."
-        lines = []
+        lines = [f"Warning: {w}" for w in self.warnings]
         for entry in self.entries:
             t = entry.task
             lines.append(
@@ -312,12 +315,14 @@ class Scheduler:
 
         Every choice — chosen or skipped — records a reason. Entries come
         back sorted by start time, and each entry's reason ends with the
-        budget used up to and including it, so the numbers rise down the plan."""
+        budget used up to and including it, so the numbers rise down the plan.
+        plan.warnings lists every overlap between the day's fixed-time
+        tasks (see detect_conflicts), even ones skipped for lack of time."""
         day = day or date.today()
         ranked = self._rank_tasks(
             [t for t in owner.get_all_tasks() if not t.completed and t.due_date <= day]
         )
-        plan = DailyPlan()
+        plan = DailyPlan(warnings=self.detect_conflicts(ranked, day))
         minutes_left = owner.available_minutes
         booked: list[tuple[int, int, ScheduledTask]] = []  # (start, end, entry)
         reserved: list[Task] = []  # flexible tasks holding budget, not yet placed
@@ -329,17 +334,11 @@ class Scheduler:
             elif task.time is None:
                 reserved.append(task)
                 minutes_left -= task.duration_minutes
-            else:
-                problem = self._try_book(task, booked)
-                if problem:
-                    plan.skipped.append(SkippedTask(task, problem))
-                else:
-                    minutes_left -= task.duration_minutes
+            elif self._book_or_skip(task, booked, plan):
+                minutes_left -= task.duration_minutes
 
         for task in reserved:
-            problem = self._try_book(task, booked)
-            if problem:
-                plan.skipped.append(SkippedTask(task, problem))
+            if not self._book_or_skip(task, booked, plan):
                 minutes_left += task.duration_minutes  # refund: it never ran
 
         for task in waiting:
@@ -351,11 +350,7 @@ class Scheduler:
                         f"only {minutes_left} min remaining)",
                     )
                 )
-                continue
-            problem = self._try_book(task, booked)
-            if problem:
-                plan.skipped.append(SkippedTask(task, problem))
-            else:
+            elif self._book_or_skip(task, booked, plan):
                 minutes_left -= task.duration_minutes
 
         # Reasons are written last, in clock order, so the running total
@@ -369,6 +364,19 @@ class Scheduler:
         rank = {id(t): i for i, t in enumerate(ranked)}
         plan.skipped.sort(key=lambda s: rank[id(s.task)])
         return plan
+
+    def _book_or_skip(
+        self, task: Task, booked: list[tuple[int, int, ScheduledTask]], plan: DailyPlan
+    ) -> bool:
+        """Try to book the task; if it can't be, add it to plan.skipped with the reason.
+
+        Returns True if it was booked, so the caller knows whether the task
+        uses up its minutes."""
+        problem = self._try_book(task, booked)
+        if problem:
+            plan.skipped.append(SkippedTask(task, problem))
+            return False
+        return True
 
     def _try_book(self, task: Task, booked: list[tuple[int, int, ScheduledTask]]) -> Optional[str]:
         """Book the task into `booked`; return None on success, or why it can't be booked.
@@ -404,6 +412,45 @@ class Scheduler:
         if task.due_date < day:
             reason += f" (overdue since {task.due_date.isoformat()})"
         return f"{reason}; {used}/{budget} min used after this"
+
+    def detect_conflicts(self, tasks: list[Task], day: Optional[date] = None) -> list[str]:
+        """Return a warning for each pair of fixed-time tasks whose times overlap.
+
+        Checks every pair, whether both tasks belong to the same pet or to
+        different pets. Two tasks clash if they fall on the same day and
+        their time ranges overlap; touching ends (09:00–09:30, then 09:30)
+        don't count. Completed and flexible tasks are ignored — the
+        scheduler fits flexible tasks into free gaps, so they can't clash.
+
+        Each task's own due_date is its day, unless `day` is given: then
+        only tasks due by `day` are checked, all as if on `day` (that's
+        how build_plan treats overdue tasks). Returns warnings rather than
+        raising, so callers can show them and carry on; [] means no clashes."""
+        timed = self.sort_by_time(
+            [
+                t
+                for t in tasks
+                if t.time is not None and not t.completed and (day is None or t.due_date <= day)
+            ]
+        )
+        warnings = []
+        for i, a in enumerate(timed):
+            a_start = parse_time(a.time)
+            a_end = a_start + a.duration_minutes
+            for b in timed[i + 1 :]:
+                if day is None and a.due_date != b.due_date:
+                    continue
+                b_start = parse_time(b.time)
+                b_end = b_start + b.duration_minutes
+                if a_start < b_end and b_start < a_end:
+                    who = "same pet" if a.pet_name == b.pet_name else "different pets"
+                    clash = "starts at the same time as" if a_start == b_start else "overlaps"
+                    warnings.append(
+                        f"{a.pet_name}'s {a.title} ({a.time}–{format_time(a_end)}) {clash} "
+                        f"{b.pet_name}'s {b.title} ({b.time}–{format_time(b_end)}) "
+                        f"on {(day or a.due_date).isoformat()} — {who}"
+                    )
+        return warnings
 
     def sort_by_time(self, tasks: list[Task]) -> list[Task]:
         """Return tasks in time-of-day order, with flexible (untimed) tasks last.
@@ -449,7 +496,13 @@ class Scheduler:
     def _first_free_slot(
         self, duration: int, booked: list[tuple[int, int, ScheduledTask]]
     ) -> Optional[int]:
-        """Return the earliest start from 08:00 where `duration` fits without overlap, or None."""
+        """Return the earliest start from 08:00 where `duration` fits without overlap, or None.
+
+        Walks the booked entries in start-time order with a candidate start.
+        If the task fits before the next booking, that's the slot; otherwise
+        the candidate jumps to the end of that booking and tries again. Using
+        max() means a booking that ends before the candidate (e.g. a 07:30
+        walk) never moves it backwards. None if it would run past midnight."""
         candidate = DAY_START_MINUTES
         for b_start, b_end, _ in sorted(booked, key=lambda b: b[0]):
             if candidate + duration <= b_start:

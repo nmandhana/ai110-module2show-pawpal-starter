@@ -3,6 +3,7 @@ classDiagram
     %% Data classes: Task, Pet, Owner (Owner manages multiple pets)
     %% Logic: Scheduler (stateless, reads tasks via Owner.get_all_tasks)
     %% Result: DailyPlan made of ScheduledTask entries + SkippedTask leftovers
+    %%         + conflict warnings from Scheduler.detect_conflicts
 
     class Owner {
         +str name
@@ -21,7 +22,7 @@ classDiagram
         +add_task(task) None
         +edit_task(task, **changes) None
         +remove_task(task) None
-        +complete_task(task) Task
+        +complete_task(task, completed_on) Task
         -require_own(task) None
         -check_duplicate(task, ignore) None
     }
@@ -35,17 +36,19 @@ classDiagram
         +str pet_name
         +Optional~str~ time
         +date due_date
-        +mark_complete() Task
-        +next_occurrence() Task
+        +mark_complete(completed_on) Task
+        +next_occurrence(completed_on) Task
     }
 
     class Scheduler {
         +build_plan(owner, day) DailyPlan
         +sort_by_time(tasks) list~Task~
+        +detect_conflicts(tasks, day) list~str~
         -rank_tasks(tasks) list~Task~
         -fits_in_budget(task, minutes_left) bool
         -find_conflict(start, end, booked) ScheduledTask
         -first_free_slot(duration, booked) int
+        -book_or_skip(task, booked, plan) bool
         -try_book(task, booked) str
         -reason(task, day, used, budget) str
     }
@@ -65,6 +68,7 @@ classDiagram
     class DailyPlan {
         +list~ScheduledTask~ entries
         +list~SkippedTask~ skipped
+        +list~str~ warnings
         +explain() str
     }
 

@@ -432,6 +432,140 @@ def test_skipped_tasks_are_listed_in_rank_order():
     assert [s.task.title for s in plan.skipped] == ["Long walk", "Grooming"]
 
 
+# --- Conflict detection -----------------------------------------------------------
+
+
+def test_detect_conflicts_same_pet():
+    """Two overlapping fixed-time tasks for one pet give one warning naming both."""
+    pet = Pet(name="Mochi", species="cat")
+    pet.add_task(Task("Play", 20, "medium", time="18:00", due_date=TODAY))
+    pet.add_task(Task("Nail trim", 15, "low", time="18:10", due_date=TODAY))
+
+    warnings = Scheduler().detect_conflicts(pet.tasks)
+
+    assert warnings == [
+        "Mochi's Play (18:00–18:20) overlaps Mochi's Nail trim (18:10–18:25) "
+        "on 2026-10-21 — same pet"
+    ]
+
+
+def test_detect_conflicts_different_pets():
+    """Overlaps are found across pets, not only within one pet's list."""
+    biscuit = Pet(name="Biscuit", species="dog")
+    mochi = Pet(name="Mochi", species="cat")
+    biscuit.add_task(Task("Grooming", 45, "low", time="17:30", due_date=TODAY))
+    mochi.add_task(Task("Play", 20, "medium", time="18:00", due_date=TODAY))
+
+    warnings = Scheduler().detect_conflicts(make_owner(60, biscuit, mochi).get_all_tasks())
+
+    assert len(warnings) == 1
+    assert "Biscuit's Grooming" in warnings[0] and "Mochi's Play" in warnings[0]
+    assert warnings[0].endswith("different pets")
+
+
+def test_detect_conflicts_exact_same_time():
+    """Two tasks starting at the very same minute clash, and the warning says so."""
+    tasks = [
+        Task("Meds", 5, "high", time="09:00", due_date=TODAY, pet_name="Biscuit"),
+        Task("Meds", 5, "high", time="09:00", due_date=TODAY, pet_name="Mochi"),
+    ]
+
+    assert Scheduler().detect_conflicts(tasks) == [
+        "Biscuit's Meds (09:00–09:05) starts at the same time as Mochi's Meds (09:00–09:05) "
+        "on 2026-10-21 — different pets"
+    ]
+
+
+def test_same_time_tasks_warn_instead_of_crashing():
+    """Two tasks at the same time that both fit the budget: build_plan doesn't
+    raise — it warns, keeps the higher-ranked one and skips the other."""
+    biscuit = Pet(name="Biscuit", species="dog")
+    mochi = Pet(name="Mochi", species="cat")
+    biscuit.add_task(Task("Walk", 30, "high", time="18:00", due_date=TODAY))
+    mochi.add_task(Task("Vet call", 15, "medium", time="18:00", due_date=TODAY))
+
+    plan = Scheduler().build_plan(make_owner(300, biscuit, mochi), TODAY)
+
+    assert len(plan.warnings) == 1 and "starts at the same time as" in plan.warnings[0]
+    assert [(e.task.title, e.start_time) for e in plan.entries] == [("Walk", "18:00")]
+    assert plan.skipped[0].reason == "conflicts with Walk (Biscuit) at 18:00–18:30"
+
+
+def test_detect_conflicts_reports_every_pair():
+    """Three tasks that all overlap give a warning for each of the three pairs."""
+    tasks = [
+        Task("A", 60, "high", time="09:00", due_date=TODAY),
+        Task("B", 60, "high", time="09:15", due_date=TODAY),
+        Task("C", 60, "high", time="09:30", due_date=TODAY),
+    ]
+
+    assert len(Scheduler().detect_conflicts(tasks)) == 3
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        Task("Walk", 30, "high", time="09:30", due_date=TODAY),  # starts as Meds ends
+        Task("Walk", 30, "high", due_date=TODAY),  # flexible
+        Task("Walk", 30, "high", time="09:00", due_date=TODAY, completed=True),  # done
+        Task("Walk", 30, "high", time="09:00", due_date=TODAY + timedelta(days=1)),  # other day
+    ],
+    ids=["back-to-back", "flexible", "completed", "different-day"],
+)
+def test_detect_conflicts_ignores_non_clashes(other):
+    """Touching ends, flexible tasks, done tasks and other days are not conflicts."""
+    meds = Task("Meds", 30, "high", time="09:00", due_date=TODAY)
+
+    assert Scheduler().detect_conflicts([meds, other]) == []
+
+
+def test_detect_conflicts_with_no_tasks_returns_empty_list():
+    """No tasks means no warnings — and no error."""
+    assert Scheduler().detect_conflicts([]) == []
+
+
+def test_plan_warns_about_conflicts_even_when_tasks_are_skipped_for_time():
+    """build_plan reports a clash even if neither task got far enough to be booked."""
+    biscuit = Pet(name="Biscuit", species="dog")
+    mochi = Pet(name="Mochi", species="cat")
+    biscuit.add_task(Task("Grooming", 45, "low", time="17:30", due_date=TODAY))
+    mochi.add_task(Task("Play", 20, "low", time="18:00", due_date=TODAY))
+
+    plan = Scheduler().build_plan(make_owner(10, biscuit, mochi), TODAY)
+
+    assert plan.entries == []
+    assert len(plan.skipped) == 2
+    assert len(plan.warnings) == 1
+    assert plan.explain().startswith("Warning: Biscuit's Grooming (17:30–18:15) overlaps")
+
+
+def test_plan_warns_when_overdue_task_clashes_with_todays():
+    """An overdue task is planned for today, so it can clash with today's task."""
+    pet = Pet(name="Biscuit", species="dog")
+    pet.add_task(Task("Meds", 10, "high", time="09:00", due_date=TODAY - timedelta(days=1)))
+    pet.add_task(Task("Walk", 30, "high", time="09:05", due_date=TODAY))
+
+    plan = Scheduler().build_plan(make_owner(60, pet), TODAY)
+
+    assert plan.warnings == [
+        "Biscuit's Meds (09:00–09:10) overlaps Biscuit's Walk (09:05–09:35) "
+        "on 2026-10-21 — same pet"
+    ]
+    assert "conflicts with Meds" in plan.skipped[0].reason
+
+
+def test_plan_without_clashes_has_no_warnings():
+    """A plan with no overlapping fixed tasks carries no warnings."""
+    pet = Pet(name="Biscuit", species="dog")
+    pet.add_task(Task("Walk", 30, "high", time="09:00", due_date=TODAY))
+    pet.add_task(Task("Feeding", 10, "high", time="09:30", due_date=TODAY))
+
+    plan = Scheduler().build_plan(make_owner(60, pet), TODAY)
+
+    assert plan.warnings == []
+    assert not plan.explain().startswith("Warning")
+
+
 def test_scheduled_task_end_time():
     """end_time is start plus duration, rolling over the hour correctly."""
     entry = ScheduledTask(Task("Walk", 30, "high"), "08:45", "")

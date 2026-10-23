@@ -62,6 +62,13 @@ def print_schedule(owner: Owner, plan: DailyPlan) -> None:
     else:
         print("  No tasks scheduled.")
 
+    if plan.warnings:
+        print()
+        print("  ⚠ CONFLICTS")
+        print(rule)
+        for warning in plan.warnings:
+            print(f"  ! {warning}")
+
     if plan.skipped:
         print()
         print("  SKIPPED")
@@ -90,13 +97,16 @@ def print_schedule(owner: Owner, plan: DailyPlan) -> None:
 def main() -> None:
     """Build a sample owner with two pets, sort and filter their tasks, and print the plan."""
     # Task.due_date defaults to today, so every task below is due today.
-    # The fixed-time tasks are added out of clock order (17:00, 07:30, 18:00,
-    # 08:15) on purpose, so sort_by_time() has something to fix.
+    # The fixed-time tasks are added out of clock order (17:30, 07:30, 18:00,
+    # 18:00, 08:15) on purpose, so sort_by_time() has something to fix. Three
+    # of them clash so detect_conflicts() has something to report: Mochi's
+    # Play session and Nail trim are both at 18:00 (same pet, same time), and
+    # Biscuit's Grooming (17:30–18:15) overlaps both (different pets).
     owner = Owner(name="Jordan", available_minutes=90)
 
     biscuit = Pet(name="Biscuit", species="dog")
     biscuit.add_task(Task("Feeding", 10, "high"))
-    biscuit.add_task(Task("Grooming", 45, "low", frequency="weekly", time="17:00"))
+    biscuit.add_task(Task("Grooming", 45, "low", frequency="weekly", time="17:30"))
     biscuit.add_task(Task("Morning walk", 30, "high", time="07:30"))
     heartworm = Task("Heartworm pill", 5, "high", frequency="weekly")
     biscuit.add_task(heartworm)
@@ -108,7 +118,7 @@ def main() -> None:
     mochi.add_task(Task("Feeding", 10, "high"))
     mochi.add_task(Task("Litter box", 15, "medium"))
     mochi.add_task(Task("Play session", 20, "medium", time="18:00"))
-    mochi.add_task(Task("Nail trim", 15, "low", frequency="weekly"))
+    mochi.add_task(Task("Nail trim", 15, "low", frequency="weekly", time="18:00"))
     mochi.add_task(Task("Vet call", 15, "medium", time="08:15"))  # fixed appointment
 
     owner.add_pet(biscuit)

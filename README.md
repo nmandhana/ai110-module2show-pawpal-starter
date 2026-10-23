@@ -85,7 +85,7 @@ Think of it like a household:
 
 ## 🖥️ Sample Output
 
-Output of `python main.py` (terminal demo — one owner with 90 minutes, a dog and a cat, nine tasks; four have fixed times and are added out of clock order — 17:00, 07:30, 18:00, 08:15 — and one weekly task is already completed today). Dates are whatever day you run it:
+Output of `python main.py` (terminal demo — one owner with 90 minutes, a dog and a cat, nine tasks; five have fixed times and are added out of clock order — 17:30, 07:30, 18:00, 18:00, 08:15 — two of them at exactly the same time (18:00) and three that overlap, and one weekly task is already completed today). Dates are whatever day you run it:
 
 ```
 ==============================================================
@@ -94,35 +94,35 @@ Output of `python main.py` (terminal demo — one owner with 90 minutes, a dog a
   As added (pet order)
   ------------------------------------------------------------
   flexible  Feeding         Biscuit  due 2026-10-23  to do
-  17:00     Grooming        Biscuit  due 2026-10-23  to do
+  17:30     Grooming        Biscuit  due 2026-10-23  to do
   07:30     Morning walk    Biscuit  due 2026-10-23  to do
   flexible  Heartworm pill  Biscuit  due 2026-10-23  done
   flexible  Heartworm pill  Biscuit  due 2026-10-30  to do
   flexible  Feeding         Mochi    due 2026-10-23  to do
   flexible  Litter box      Mochi    due 2026-10-23  to do
   18:00     Play session    Mochi    due 2026-10-23  to do
-  flexible  Nail trim       Mochi    due 2026-10-23  to do
+  18:00     Nail trim       Mochi    due 2026-10-23  to do
   08:15     Vet call        Mochi    due 2026-10-23  to do
 
   Sorted by time — sort_by_time()
   ------------------------------------------------------------
   07:30     Morning walk    Biscuit  due 2026-10-23  to do
   08:15     Vet call        Mochi    due 2026-10-23  to do
-  17:00     Grooming        Biscuit  due 2026-10-23  to do
+  17:30     Grooming        Biscuit  due 2026-10-23  to do
   18:00     Play session    Mochi    due 2026-10-23  to do
+  18:00     Nail trim       Mochi    due 2026-10-23  to do
   flexible  Feeding         Biscuit  due 2026-10-23  to do
   flexible  Heartworm pill  Biscuit  due 2026-10-23  done
   flexible  Heartworm pill  Biscuit  due 2026-10-30  to do
   flexible  Feeding         Mochi    due 2026-10-23  to do
   flexible  Litter box      Mochi    due 2026-10-23  to do
-  flexible  Nail trim       Mochi    due 2026-10-23  to do
 
   Mochi only — filter_tasks(pet_name="Mochi")
   ------------------------------------------------------------
   flexible  Feeding       Mochi  due 2026-10-23  to do
   flexible  Litter box    Mochi  due 2026-10-23  to do
   18:00     Play session  Mochi  due 2026-10-23  to do
-  flexible  Nail trim     Mochi  due 2026-10-23  to do
+  18:00     Nail trim     Mochi  due 2026-10-23  to do
   08:15     Vet call      Mochi  due 2026-10-23  to do
 
   Done — filter_tasks(completed=True)
@@ -132,7 +132,7 @@ Output of `python main.py` (terminal demo — one owner with 90 minutes, a dog a
   Biscuit, to do — filter_tasks(completed=False, pet_name="Biscuit")
   ------------------------------------------------------------
   flexible  Feeding         Biscuit  due 2026-10-23  to do
-  17:00     Grooming        Biscuit  due 2026-10-23  to do
+  17:30     Grooming        Biscuit  due 2026-10-23  to do
   07:30     Morning walk    Biscuit  due 2026-10-23  to do
   flexible  Heartworm pill  Biscuit  due 2026-10-30  to do
 
@@ -149,6 +149,12 @@ Output of `python main.py` (terminal demo — one owner with 90 minutes, a dog a
   08:30–08:40   Feeding       Mochi      10  HIGH
   08:40–08:55   Litter box    Mochi      15  MEDIUM
 
+  ⚠ CONFLICTS
+  ------------------------------------------------------------
+  ! Biscuit's Grooming (17:30–18:15) overlaps Mochi's Play session (18:00–18:20) on 2026-10-23 — different pets
+  ! Biscuit's Grooming (17:30–18:15) overlaps Mochi's Nail trim (18:00–18:15) on 2026-10-23 — different pets
+  ! Mochi's Play session (18:00–18:20) starts at the same time as Mochi's Nail trim (18:00–18:15) on 2026-10-23 — same pet
+
   SKIPPED
   ------------------------------------------------------------
   ✗ Play session  Mochi    not enough time left (needs 20 min, only 10 min remaining)
@@ -163,6 +169,9 @@ Output of `python main.py` (terminal demo — one owner with 90 minutes, a dog a
 ==============================================================
 
 Details (DailyPlan.explain()):
+Warning: Biscuit's Grooming (17:30–18:15) overlaps Mochi's Play session (18:00–18:20) on 2026-10-23 — different pets
+Warning: Biscuit's Grooming (17:30–18:15) overlaps Mochi's Nail trim (18:00–18:15) on 2026-10-23 — different pets
+Warning: Mochi's Play session (18:00–18:20) starts at the same time as Mochi's Nail trim (18:00–18:15) on 2026-10-23 — same pet
 07:30–08:00 — Morning walk (30 min, Biscuit) [priority: high] — high priority, daily task, fixed time 07:30; 30/90 min used after this
 08:00–08:10 — Feeding (10 min, Biscuit) [priority: high] — high priority, daily task, earliest free slot; 40/90 min used after this
 08:15–08:30 — Vet call (15 min, Mochi) [priority: medium] — medium priority, daily task, fixed time 08:15; 55/90 min used after this
@@ -175,9 +184,10 @@ Skipped: Grooming (Biscuit) — not enough time left (needs 45 min, only 10 min 
 
 What to look for:
 
-- **Sorting** — in "As added", the fixed times appear as 17:00, 07:30, 18:00, 08:15. `sort_by_time()` puts them in clock order (07:30, 08:15, 17:00, 18:00), followed by the flexible tasks in the order they were added.
+- **Sorting** — in "As added", the fixed times appear as 17:30, 07:30, 18:00, 18:00, 08:15. `sort_by_time()` puts them in clock order (07:30, 08:15, 17:30, 18:00, 18:00 — the two 18:00 tasks keep the order they were added in), followed by the flexible tasks in the order they were added.
 - **Filtering** — `filter_tasks()` narrows the same list by pet, by status, or both. The "done" filter finds today's completed Heartworm pill; the "Biscuit, to do" filter shows next week's dose that `complete_task()` booked.
-- **Schedule** — the completed Heartworm pill isn't planned, and next week's isn't due yet. Biscuit's Morning walk keeps its 07:30 slot and Mochi's Vet call keeps 08:15. Mochi's Feeding doesn't fit in the 5-minute gap before the Vet call, so it moves to 08:30. Play session (18:00) and Grooming (17:00) have fixed times but rank below the other tasks and need more than the 10 minutes left, so they're skipped.
+- **Schedule** — the completed Heartworm pill isn't planned, and next week's isn't due yet. Biscuit's Morning walk keeps its 07:30 slot and Mochi's Vet call keeps 08:15. Mochi's Feeding doesn't fit in the 5-minute gap before the Vet call, so it moves to 08:30. Play session (18:00), Nail trim (18:00) and Grooming (17:30) have fixed times but rank below the other tasks and need more than the 10 minutes left, so they're skipped.
+- **Conflicts** — Mochi's Play session and Nail trim are both at 18:00, and `detect_conflicts()` prints a warning that one "starts at the same time as" the other (same pet). It also warns that Biscuit's Grooming (17:30–18:15) overlaps both (different pets). The program prints the warnings and carries on — nothing crashes. All three are skipped for lack of time, so they never got far enough to be compared while booking, but the warnings still flag them. (When two same-time tasks both fit the budget, the higher-ranked one keeps the slot and the other is skipped with "conflicts with …", alongside the warning.)
 
 ## 🧪 Testing PawPal+
 
@@ -191,30 +201,58 @@ pytest --cov
 
 `pytest.ini` points pytest at the `tests/` folder and adds the project root to the import path, so plain `pytest` works from the project folder.
 
-There are 90 tests in two files:
+There are 106 tests in two files:
 
 | File | What it checks |
 |------|----------------|
-| `tests/test_pawpal.py` (71) | Task creation and validation (duration, priority, frequency, time); `mark_complete()` (and the next occurrence it creates); adding, editing and removing tasks and pets; the duplicate-task rule; priority ordering and tie-breaks; the time budget and skip reasons; fixed-time booking, gap filling around appointments, conflicts, back-to-back tasks, tasks past midnight; refunding the minutes of a task that finds no free slot; running budget totals in reasons; skipped tasks in rank order; start-time order and `end_time`; recurrence (`next_occurrence()`, `complete_task()`), due dates and overdue tasks; `sort_by_time()`; `filter_tasks()` by status, by pet and both together; multi-pet and empty plans. |
-| `tests/test_app.py` (19) | The Streamlit app run headlessly with `AppTest`: adding pets and tasks (including fixed times), error messages for blank/duplicate/invalid input, state surviving reruns, Mark complete, Delete task, the edit form, Remove pet, the pet and status filters (including no matches), and the generated schedule, skipped table and explanation. |
+| `tests/test_pawpal.py` (84) | Task creation and validation (duration, priority, frequency, time); `mark_complete()` (and the next occurrence it creates); adding, editing and removing tasks and pets; the duplicate-task rule; priority ordering and tie-breaks; the time budget and skip reasons; fixed-time booking, gap filling around appointments, conflicts, back-to-back tasks, tasks past midnight; `detect_conflicts()` for the same pet, different pets, identical start times (with a "starts at the same time" message), same-time tasks warning instead of crashing when both fit the budget, every pair of three overlapping tasks, and the cases that aren't conflicts (touching ends, flexible, completed, other days), plus plan warnings for tasks skipped for time and for an overdue task clashing with today's; refunding the minutes of a task that finds no free slot; running budget totals in reasons; skipped tasks in rank order; start-time order and `end_time`; recurrence (`next_occurrence()`, `complete_task()`), due dates and overdue tasks; `sort_by_time()`; `filter_tasks()` by status, by pet and both together; multi-pet and empty plans. |
+| `tests/test_app.py` (22) | The Streamlit app run headlessly with `AppTest`: adding pets and tasks (including fixed times), error messages for blank/duplicate/invalid input, state surviving reruns, Mark complete, Delete task, the edit form, Remove pet, the task table's time order, the pet and status filters (including no matches), weekly tasks coming back in 7 days, conflict warnings in the task list and schedule, and the generated schedule, skipped table and explanation. |
 
 Result of the last run:
 
 ```
-============================== 90 passed in 3.71s ==============================
+============================== 106 passed in 4.08s ==============================
 ```
 
 ## 📐 Smarter Scheduling
 
+Beyond basic priority planning, PawPal+ sorts, filters, detects time conflicts and handles recurring tasks. Each feature below names the method that implements it (all in `pawpal_system.py`).
+
+### Sorting behavior — `Scheduler.sort_by_time()`
+
+- Returns tasks in time-of-day order: fixed-time tasks earliest first, then flexible (untimed) tasks in the order they were added.
+- Uses `sorted()` with a lambda key: `lambda t: (t.time is None, t.time or "")`. The first part is `False` for timed tasks and `True` for flexible ones, and `False < True`, so timed tasks come first; the second part orders them by clock time.
+- Comparing `"HH:MM"` strings directly is safe because `Task` only accepts zero-padded 24-hour times (`"09:00" < "10:00"`). `sorted()` is stable and returns a new list, so the input is unchanged.
+- Used by: the app's **Your Tasks** table, and `main.py`, which adds tasks out of order (17:30, 07:30, 18:00, 18:00, 08:15) and prints them sorted.
+
+### Filtering behavior — `Owner.filter_tasks(completed=None, pet_name=None)`
+
+- Filters tasks across all pets by **completion status**, **pet name**, or both: `filter_tasks(completed=False)` gives unfinished tasks, `filter_tasks(pet_name="Mochi")` gives Mochi's tasks, and both together give Mochi's unfinished tasks. A filter left as `None` matches everything.
+- Returns the owner's real `Task` objects, so marking one complete or editing it sticks.
+- Used by: the app's **Show pet** / **Show status** dropdowns, and `main.py`, which prints three filtered lists.
+
+### Conflict detection logic — `Scheduler.detect_conflicts()` (+ `DailyPlan.warnings`, `Scheduler._find_conflict()`)
+
+- `detect_conflicts(tasks, day=None)` checks **every pair** of unfinished fixed-time tasks — for the **same pet or different pets** — and returns a warning for each pair whose time ranges (start + duration) overlap on the same day. Tasks starting at the same minute get a "starts at the same time as" message; tasks that only touch (09:00–09:30, then 09:30) don't count.
+- It's a **lightweight** strategy: it returns warning messages instead of raising, so the program never crashes on a conflict — callers show the warnings and carry on. Example: `Mochi's Play session (18:00–18:20) starts at the same time as Mochi's Nail trim (18:00–18:15) on 2026-10-23 — same pet`.
+- `build_plan()` stores the day's warnings on `DailyPlan.warnings` (including tasks skipped for lack of time, and overdue tasks, which are planned for today), and `DailyPlan.explain()` lists them first.
+- While booking, `_find_conflict()` resolves clashes: the higher-ranked task keeps the slot and the other is skipped with "conflicts with …".
+- Used by: ⚠️ warnings in the app's **Your Tasks** section (as soon as a clashing task is added) and above the generated schedule, and the **⚠ CONFLICTS** section in `main.py`.
+
+### Recurring task logic — `Task.mark_complete()`, `Task.next_occurrence()`, `Pet.complete_task()`
+
+- `Task.mark_complete()` marks a task done and **creates its next occurrence** via `next_occurrence()`: due today + `timedelta(days=1)` for a daily task, or + `timedelta(days=7)` for a weekly one. `Pet.complete_task()` adds the new task to the pet's list.
+- Counting from the completion day means finishing an overdue task doesn't book another overdue one; a task finished early counts from its due date instead, so it still moves forward. `timedelta` handles month and year ends (Oct 31 → Nov 1, Dec 31 → Jan 1).
+- Each task has a `due_date`; `build_plan()` only plans tasks due on or before the plan day, so tomorrow's copy stays out of today's plan, and overdue tasks are flagged "overdue since …".
+- Used by: the app's **Mark complete** button, and `main.py`, which completes the weekly Heartworm pill so next week's dose appears in the task lists.
+
+### Other scheduling features
+
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | `Scheduler._rank_tasks()` | Priority (high → medium → low), then daily before weekly, then shortest first. Stable sort, so the same input always gives the same order. |
-| Sort by time | `Scheduler.sort_by_time()` | `sorted()` with a lambda key `lambda t: (t.time is None, t.time or "")`: timed tasks earliest first, flexible tasks after in their original order. Plain `"HH:MM"` string comparison is safe because `Task` only accepts zero-padded times. Used for the app's task table. |
-| Filtering | `Scheduler.build_plan()`, `Scheduler._fits_in_budget()`, `Task.mark_complete()` | Completed tasks and tasks not yet due are left out. A task that doesn't fit the remaining time waits; the loop keeps going, so a smaller task further down can still fit. If a flexible task finds no free slot, its minutes are refunded, and waiting tasks get a second try with what's left before being skipped with a reason. |
-| Fixed times | `Task.time`, `Scheduler.build_plan()`, `Scheduler._first_free_slot()` | Fixed-time tasks are booked at their time; flexible tasks fill the earliest free gaps from 08:00 around them. Entries are returned in clock order. |
-| Conflict handling | `Scheduler._find_conflict()` | Two fixed-time tasks that overlap: the higher-ranked one keeps the slot, the other is skipped with "conflicts with …". Tasks that only touch (one ends at 09:30, the next starts at 09:30) don't conflict. A fixed task running past midnight is skipped. |
-| Recurring tasks | `Task.mark_complete()`, `Task.next_occurrence()`, `Pet.complete_task()`, `Task.due_date` | Marking a task complete creates its next occurrence, due today + `timedelta(days=1)` for a daily task or `timedelta(days=7)` for a weekly one; `Pet.complete_task()` adds that new task to the pet's list. Counting from the day it's completed means finishing an overdue task doesn't book another overdue one; a task finished early counts from its due date instead. `timedelta` handles month and year ends (Oct 31 → Nov 1, Dec 31 → Jan 1). The scheduler only plans tasks due on the plan day; overdue tasks are still planned and their reason says "overdue since …". |
-| Filtering by status or pet | `Owner.filter_tasks()` | `filter_tasks(completed=False)` gives unfinished tasks, `filter_tasks(pet_name="Mochi")` gives Mochi's, and both together give Mochi's unfinished tasks. Leaving a filter as `None` matches everything. It returns the owner's real `Task` objects, so changes to them stick. Used by the **Show pet** / **Show status** filters in the app. |
+| Priority ranking | `Scheduler._rank_tasks()` | Priority (high → medium → low), then daily before weekly, then shortest first. Stable sort, so the same input always gives the same plan. |
+| Time budget | `Scheduler.build_plan()`, `Scheduler._fits_in_budget()`, `Scheduler._book_or_skip()` | Completed tasks and tasks not yet due are left out. A task that doesn't fit the remaining minutes waits; the loop keeps going, so a smaller task further down can still fit. If a flexible task finds no free slot, its minutes are refunded, and waiting tasks get a second try before being skipped with a reason. |
+| Fixed times and gap filling | `Task.time`, `Scheduler._try_book()`, `Scheduler._first_free_slot()` | Fixed-time tasks are booked at their time; flexible tasks fill the earliest free gaps from 08:00 around them. Entries come back in clock order. A fixed task running past midnight is skipped. |
 | Editing | `Pet.edit_task()`, `Pet.remove_task()`, `Owner.remove_pet()` | Edits are validated on a copy first, so a bad edit changes nothing. |
 
 ## 📸 Demo Walkthrough
@@ -223,10 +261,10 @@ Result of the last run:
 
 1. Set up the environment (see [Setup](#setup)) and run `python main.py` from the project folder.
 2. The script creates an owner, Jordan, with 90 minutes free today, and two pets: Biscuit (dog) and Mochi (cat).
-3. It adds nine tasks across the two pets, with different durations, priorities and frequencies. Four have fixed times, added out of clock order: Biscuit's "Grooming" (17:00), Biscuit's "Morning walk" (07:30), Mochi's "Play session" (18:00) and Mochi's "Vet call" (08:15). Biscuit's weekly "Heartworm pill" is completed with `complete_task()`, which books next week's dose.
+3. It adds nine tasks across the two pets, with different durations, priorities and frequencies. Five have fixed times, added out of clock order: Biscuit's "Grooming" (17:30), Biscuit's "Morning walk" (07:30), Mochi's "Play session" (18:00), Mochi's "Nail trim" (18:00) and Mochi's "Vet call" (08:15). Play session and Nail trim are at the same time (same pet), and Grooming overlaps both (different pets). Biscuit's weekly "Heartworm pill" is completed with `complete_task()`, which books next week's dose.
 4. A **Tasks** section prints the tasks as added, then sorted with `Scheduler.sort_by_time()`, then filtered with `Owner.filter_tasks()`: Mochi's tasks only, completed tasks only, and Biscuit's unfinished tasks.
 5. The `Scheduler` builds the plan and the terminal prints a "Today's Schedule" table in clock order: each task's time slot, pet, length and priority, with 📌 marking fixed-time tasks.
-6. Below the table, a "Skipped" section lists the tasks that didn't make it and why, then a one-line summary of time used and time left, and finally the full `DailyPlan.explain()` text (shown in Sample Output above).
+6. Below the table, a "Conflicts" section lists every overlap between fixed-time tasks, then a "Skipped" section lists the tasks that didn't make it and why, then a one-line summary of time used and time left, and finally the full `DailyPlan.explain()` text (shown in Sample Output above).
 
 **Streamlit app (`app.py`)**:
 
@@ -240,6 +278,7 @@ Result of the last run:
    - **Edit this task** — change its title, duration, priority, frequency or time and click **Save changes**.
 6. **Build Schedule** — click **Generate schedule**. PawPal+ shows:
    - a **Today's Schedule** table in clock order: start, end, task (📌 = fixed time), pet, minutes, priority, and *why* it was chosen;
+   - a ⚠️ **warning** for each pair of fixed-time tasks that overlap, whether for the same pet or different pets (the same warnings also appear in **Your Tasks** as soon as a clashing task is added);
    - a **Skipped** table for tasks that didn't make it, each with the reason (not enough time, a conflict with another appointment, …);
    - a **Plan explanation** expander with the `explain()` text;
    - a summary line: tasks scheduled, minutes used out of the budget, and tasks skipped.

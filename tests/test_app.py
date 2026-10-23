@@ -288,3 +288,47 @@ def test_filters_with_no_matches_show_message(app):
     assert not app.exception
     assert any("No tasks match these filters." in i.value for i in app.info)
     assert not any(s.label == "Choose a task to update" for s in app.selectbox)
+
+
+def test_conflicting_tasks_show_warning(app):
+    """Overlapping fixed-time tasks for different pets show a warning in the
+    task list right away, and again above the schedule."""
+    add_pet(app, "Biscuit")
+    add_pet(app, "Mochi", "cat")
+    add_task(app, "Biscuit", "Walk", 30, time="09:00")
+    assert not app.warning
+
+    add_task(app, "Mochi", "Vet call", 15, time="09:15")
+    assert len(app.warning) == 1
+    assert "Biscuit's Walk (09:00–09:30) overlaps Mochi's Vet call" in app.warning[0].value
+
+    widget(app.button, "Generate schedule").click().run()
+    assert not app.exception
+    assert len(app.warning) == 2  # task list + schedule
+    assert "different pets" in app.warning[1].value
+
+
+def test_task_table_is_sorted_by_time(app):
+    """Tasks added out of clock order are listed by time, flexible ones last."""
+    add_pet(app, "Biscuit")
+    add_task(app, "Biscuit", "Grooming", 45, time="17:30")
+    add_task(app, "Biscuit", "Feeding", 10)
+    add_task(app, "Biscuit", "Walk", 30, time="07:30")
+
+    table = app.table[0].value
+    assert list(table["title"]) == ["Walk", "Grooming", "Feeding"]
+    assert list(table["time"]) == ["📌 07:30", "📌 17:30", "flexible"]
+
+
+def test_mark_complete_weekly_task_is_next_due_in_a_week(app):
+    """Completing a weekly task books its next copy for today + 7 days."""
+    add_pet(app, "Biscuit")
+    add_task(app, "Biscuit", "Grooming", 45, frequency="weekly")
+    choose_task(app, "Grooming")
+
+    widget(app.button, "Mark complete").click().run()
+
+    done, upcoming = app.session_state.owner.get_all_tasks()
+    assert done.completed and not upcoming.completed
+    assert upcoming.due_date == date.today() + timedelta(days=7)
+
